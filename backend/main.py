@@ -1,7 +1,7 @@
 import os
 import time
 from datetime import datetime
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Tuple, List
 
 import httpx
 from dotenv import load_dotenv
@@ -21,11 +21,13 @@ load_dotenv()
 COINGECKO_BASE_URL = os.getenv("COINGECKO_BASE_URL", "https://api.coingecko.com/api/v3")
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
 
+FREE_DAILY_LIMIT = 10
+
 app = FastAPI(title="Mini Market Dashboard API", version="1.0.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:3001"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -34,6 +36,7 @@ app.add_middleware(
 # SQLite tablolarını oluştur
 models.Base.metadata.create_all(bind=engine)
 
+
 def get_db():
     db = SessionLocal()
     try:
@@ -41,10 +44,12 @@ def get_db():
     finally:
         db.close()
 
+
 security = HTTPBearer()
 
 # ---- In-memory cache (TTL) ----
 _cache: Dict[str, Tuple[float, Any]] = {}
+
 
 def cache_get(key: str):
     entry = _cache.get(key)
@@ -56,12 +61,15 @@ def cache_get(key: str):
         return None
     return data
 
+
 def cache_set(key: str, data: Any, ttl: int):
     _cache[key] = (time.time() + ttl, data)
+
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
 
 # ---- Auth helpers ----
 def get_current_user(
@@ -79,20 +87,22 @@ def get_current_user(
 
     return user
 
+
 def apply_daily_rate_limit(user: User, db: Session):
     """
     Free plan: 10 istek/gün.
     Cache'den dönse bile endpoint çağrıldıysa istek sayılır.
+    Reset UTC gününe göre yapılır.
     """
-    today = datetime.utcnow().date()  # FIX: UTC date ile kontrol
+    today = datetime.utcnow().date()
 
     if user.last_request_date is None or user.last_request_date.date() != today:
         user.daily_request_count = 0
 
-    if user.plan_type.lower() == "free" and user.daily_request_count >= 10:
+    if user.plan_type.lower() == "free" and user.daily_request_count >= FREE_DAILY_LIMIT:
         raise HTTPException(
             status_code=429,
-            detail="Daily request limit reached (Free plan: 10/day)",
+            detail=f"Daily request limit reached (Free plan: {FREE_DAILY_LIMIT}/day)",
         )
 
     user.daily_request_count += 1
@@ -101,6 +111,7 @@ def apply_daily_rate_limit(user: User, db: Session):
     db.add(user)
     db.commit()
     db.refresh(user)
+
 
 # ---- Auth endpoints ----
 @app.post("/register", response_model=TokenResponse)
@@ -122,6 +133,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     token = create_access_token(subject=user.email)
     return {"access_token": token, "token_type": "bearer"}
 
+
 @app.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == payload.email).first()
@@ -131,6 +143,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     token = create_access_token(subject=user.email)
     return {"access_token": token, "token_type": "bearer"}
 
+
 # ---- Protected proxy endpoint ----
 @app.get("/api/coins/markets")
 async def coins_markets(
@@ -139,7 +152,7 @@ async def coins_markets(
     page: int = 1,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
-):
+) -> List[Dict[str, Any]]:
     apply_daily_rate_limit(user, db)
 
     if per_page < 1 or per_page > 250:
@@ -148,7 +161,10 @@ async def coins_markets(
     key = f"markets:{vs_currency}:{per_page}:{page}"
     cached = cache_get(key)
     if cached is not None:
-        return {"source": "cache", "data": cached}
+        print(f"CACHE HIT  -> {key}")
+        return cached
+
+    print(f"CACHE MISS -> {key} (calling CoinGecko)")
 
     url = f"{COINGECKO_BASE_URL}/coins/markets"
     params = {
@@ -169,7 +185,7 @@ async def coins_markets(
     except httpx.RequestError:
         raise HTTPException(status_code=502, detail="Upstream request failed")
 
-    data = []
+    data: List[Dict[str, Any]] = []
     for item in raw:
         data.append(
             {
@@ -184,7 +200,8 @@ async def coins_markets(
         )
 
     cache_set(key, data, CACHE_TTL_SECONDS)
-    return {"source": "upstream", "data": data}
+    return data
+
 
 # ---- Debug endpoint (sayaç kontrolü) ----
 @app.get("/me")
