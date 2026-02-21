@@ -119,23 +119,23 @@ TTL ortam değişkeni:
   plan_type             Free / Pro
   daily_request_count   Daily quota counter
   last_request_date     Reset control
-  created_at            Timestamp```
-
+  created_at            Timestamp
+```
 ------------------------------------------------------------------------
 
 ## 📱 Frontend Özellikleri
-
+```bash
 -   Register / Login
 -   Dashboard
 -   Coin arama
 -   Favorilere ekleme
 -   Plan yükseltme simülasyonu
 -   Mobil uyumlu tasarım (375px destekli)
-
+```
 ------------------------------------------------------------------------
 
 ## 💼 İş Modeli Perspektifi
-
+```bash
 ### Cache Olmazsa
 
 -   Her refresh upstream çağrı üretir
@@ -155,11 +155,11 @@ TTL ortam değişkeni:
 -   Redis rate limit counter
 -   Multi-instance deployment
 -   Load balancer
-
+```
 ------------------------------------------------------------------------
 
 ## 🚀 Deployment
-
+```bash
 Frontend: Vercel\
 Backend: Render
 
@@ -168,7 +168,7 @@ Live Demo:
 Frontend: https://mini-market-dashboard-six.vercel.app/
 
 Backend: https://mini-market-dashboard.onrender.com/
-
+```
 ------------------------------------------------------------------------
 
 # 🇬🇧 English
