@@ -20,7 +20,6 @@ load_dotenv()
 
 COINGECKO_BASE_URL = os.getenv("COINGECKO_BASE_URL", "https://api.coingecko.com/api/v3")
 CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
-
 FREE_DAILY_LIMIT = 10
 
 app = FastAPI(title="Mini Market Dashboard API", version="1.0.0")
@@ -187,9 +186,19 @@ async def coins_markets(
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(url, params=params)
+
+        # CoinGecko public rate limit (Render IP bazlı olabilir)
+        if r.status_code == 429:
+            raise HTTPException(
+                status_code=503,
+                detail="CoinGecko rate limit (public API). Please try again in 30-60 seconds.",
+            )
+
         if r.status_code != 200:
             raise HTTPException(status_code=502, detail=f"Upstream error: {r.status_code}")
+
         raw = r.json()
+
     except httpx.RequestError:
         raise HTTPException(status_code=502, detail="Upstream request failed")
 
