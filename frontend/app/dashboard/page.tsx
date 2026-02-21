@@ -78,19 +78,29 @@ export default function DashboardPage() {
 
       setCoins(list);
     } catch (e: any) {
-      if (e?.status === 401) {
-        clearToken();
-        router.push("/login");
-        return;
-      }
+  if (e?.status === 401) {
+    clearToken();
+    router.push("/login");
+    return;
+  }
 
-      if (e?.status === 429) {
-        // Limit dolduysa yine /me çekmeye çalış (bazı backendlere göre)
-        setError(e?.detail || "Rate limit doldu (Free: 10/gün).");
-        return;
-      }
+  // 👇 UPSTREAM (CoinGecko) rate limit
+  if (e?.status === 503) {
+    setError(
+      e?.detail ||
+        "CoinGecko rate limit (public API). 30-60 saniye sonra tekrar deneyin."
+    );
+    return;
+  }
 
-      setError(e?.detail || "Sunucu hatası. Tekrar dene.");
+  // 👇 Senin kullanıcı limitin
+  if (e?.status === 429) {
+    setError(e?.detail || "Günlük limit doldu (Free: 10/gün).");
+    return;
+  }
+
+  setError(e?.detail || "Sunucu hatası. Tekrar dene.");
+
     } finally {
       setLoading(false);
     }
