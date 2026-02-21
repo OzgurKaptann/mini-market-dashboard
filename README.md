@@ -1,230 +1,225 @@
-# 🚀 Mini Market Dashboard (SaaS Simulation)
-### FastAPI + Next.js | Mobile Ready | Auth + Rate Limit + Cache
+# 🚀 Mini Market Dashboard
 
----
+## Production-Aware SaaS Simulation \| FastAPI + Next.js
+
+------------------------------------------------------------------------
 
 # 🇹🇷 Türkçe
 
-## 🎯 Projenin Amacı
+## 🎯 Projenin Vizyonu
 
-Bu proje, gerçek bir SaaS ürün mimarisini simüle etmek amacıyla geliştirilmiştir.
+Mini Market Dashboard, yalnızca kripto fiyatlarını gösteren bir uygulama
+değildir.
 
-Amaç yalnızca CoinGecko’dan veri çekmek değil, aynı zamanda:
+Bu proje:
 
-- JWT Authentication uygulamak
-- Kullanıcı bazlı günlük rate limit uygulamak
-- In-memory cache ile performans optimizasyonu yapmak
-- Frontend’in dış API’ye doğrudan bağlanmasını engellemek
-- Mobil uyumlu bir dashboard arayüzü oluşturmak
+-   Backend proxy mimarisini zorunlu kılar
+-   Kullanıcı bazlı plan kontrolü uygular
+-   Rate limiting ve cache stratejisini gerçek SaaS mantığında tasarlar
+-   Production ortamını dikkate alarak deploy edilir
 
-Bu proje, bir Data Analyst olarak veri tüketmekten,  
-bir Data Engineer gibi sistem kurma yaklaşımına geçiş adımıdır.
+Bu çalışma, veri tüketen bir Data Analyst yaklaşımından, sistem
+tasarlayan bir Data Engineer düşünce yapısına geçiş pratiğidir.
 
----
+------------------------------------------------------------------------
 
-## 🏗️ Mimari Yapı
+## 🏗️ Mimari Tasarım
 
-```
-[ Next.js Frontend ]
-          |
-          v
-[ FastAPI Backend (Auth + Rate Limit + Cache) ]
-          |
-          v
-[ CoinGecko Public API ]
-```
+    [ Next.js Frontend ]
+              |
+              v
+    [ FastAPI Backend Layer ]
+              |
+              v
+    [ CoinGecko Public API ]
 
-### Kritik Kural
+### Kritik Mimari Karar
 
-Frontend hiçbir zaman dış API’ye doğrudan bağlanmaz.  
-Tüm veri backend proxy üzerinden sağlanır.
+Frontend doğrudan CoinGecko API'ye bağlanamaz.
 
----
+Tüm veri akışı backend proxy üzerinden geçer. Bu sayede:
 
-## 🛠️ Kullanılan Teknolojiler
+-   Authentication enforce edilir
+-   Rate limit kontrol edilir
+-   Cache uygulanır
+-   API anahtarı (gerekiyorsa) korunur
 
-### Backend
-- FastAPI
-- SQLAlchemy
-- SQLite
-- JWT Authentication
-- bcrypt password hashing
-- httpx (async upstream requests)
-- In-memory TTL cache
+------------------------------------------------------------------------
 
-### Frontend
-- Next.js (App Router)
-- TypeScript
-- SessionStorage token yönetimi
-- Responsive layout (mobil uyum)
+## 🔐 Authentication & Security
 
----
+-   JWT Authentication
+-   Argon2 password hashing (bcrypt alternatifi, daha güçlü)
+-   Protected endpoints
+-   Plan bazlı erişim kontrolü
 
-## 🔐 Authentication & Authorization
+Public: - POST /register - POST /login - GET /health
 
-Public Endpoints:
-- POST /register
-- POST /login
-- GET /health
+Protected: - GET /me - GET /api/coins/markets
 
-Protected Endpoints (Bearer Token gerekir):
-- GET /me
-- GET /api/coins/markets
+------------------------------------------------------------------------
 
-JWT olmadan erişim:
+## 📊 Rate Limiting Tasarımı
 
-401 Unauthorized
+### Free Plan
 
----
+-   10 upstream API çağrısı / gün
 
-## 📊 Rate Limiting
+### Pro Plan
 
-Free Plan:
-- 10 istek / gün
+-   Limitsiz
 
-Pro Plan:
-- Sınırsız
+### Uygulama Detayı
 
-Limit dolduğunda:
+Sadece CoinGecko'ya yapılan gerçek upstream çağrılar sayılır. Cache hit
+olan istekler kotaya dahil edilmez.
 
-429 Daily request limit reached
+Bu karar:
 
-Rate limit:
-- Kullanıcı bazlıdır
-- UTC gününe göre reset olur
-- daily_request_count DB’de tutulur
+-   Public API kotasını korur
+-   Cache verimliliğini teşvik eder
+-   Gerçek backend kaynak tüketimini baz alır
+-   SaaS quota design mantığını simüle eder
 
----
+------------------------------------------------------------------------
 
 ## ⚡ Cache Stratejisi
 
-- TTL: 60 saniye
-- In-memory dictionary cache
-- Parametre bazlı key oluşturulur
+-   In-memory TTL cache
+-   Parametre bazlı cache key üretimi
 
-Log çıktısı:
+### Assignment Notu
 
-CACHE MISS -> CoinGecko çağrıldı  
-CACHE HIT  -> Memory cache kullanıldı  
+Görev dokümanında TTL = 60 saniye olarak belirtilmiştir.
 
-Cache olmazsa:
-- Her refresh upstream çağrı yapar
-- Latency artar
-- Upstream limit riski büyür
+Demo ortamında TTL = 600 saniye kullanılmıştır.
 
----
+Sebep:
 
-## 📈 10.000 Kullanıcı Senaryosu
+Render free tier tek instance çalıştırır. Kısa TTL gereksiz upstream
+çağrılarını artırabilir.
 
-Mevcut demo:
-- SQLite
-- Memory cache (instance bazlı)
+Bu ayar production-awareness göstergesidir.
 
-Büyüdüğünde:
-- SQLite write contention oluşur
-- Cache instance bazlı kalır
-- Horizontal scaling zorlaşır
+TTL ortam değişkeni:
 
-Production yaklaşımı:
-- PostgreSQL
-- Redis cache
-- Redis rate limit counter
-- Multi worker + Load balancer
+    CACHE_TTL_SECONDS
 
----
+------------------------------------------------------------------------
 
-## 🧠 Redis Kullanım Alanı
+## 🗂️ Veritabanı Tasarımı
 
-1) Cache
-2) Rate limit sayaçları
+### USERS
 
-Örnek:
+  Field                 Description
+  --------------------- ---------------------
+  id                    Primary Key
+  email                 Unique
+  password_hash         Secure hash
+  plan_type             Free / Pro
+  daily_request_count   Daily quota counter
+  last_request_date     Reset control
+  created_at            Timestamp
 
-INCR user:{id}:requests:{YYYY-MM-DD}  
-TTL 86400  
+------------------------------------------------------------------------
 
----
+## 📱 Frontend Özellikleri
 
-## 💳 Gerçek Pro Plan Entegrasyonu
+-   Register / Login
+-   Dashboard
+-   Coin arama
+-   Favorilere ekleme
+-   Plan yükseltme simülasyonu
+-   Mobil uyumlu tasarım (375px destekli)
 
-- Stripe webhook endpoint
-- Ödeme başarılı → webhook backend’e gelir
-- plan_type = "Pro" olarak güncellenir
-- Rate limit otomatik değişir
+------------------------------------------------------------------------
 
----
+## 💼 İş Modeli Perspektifi
 
-## 🛡️ Abuse Önleme
+### Cache Olmazsa
 
-- IP throttling
-- Short JWT expiry
-- Email verification
-- CAPTCHA
-- Activity logging
+-   Her refresh upstream çağrı üretir
+-   Latency artar
+-   Public API throttle riski oluşur
 
----
+### 10.000 Kullanıcı Senaryosu
 
-## 🗂️ ER Yapısı
+-   SQLite write contention
+-   Instance-level cache limitation
+-   Horizontal scaling ihtiyacı
 
-USERS
------
-id (PK)
-email (unique)
-password_hash
-plan_type
-daily_request_count
-last_request_date
-created_at
+### Production Ölçeklendirme
 
----
+-   PostgreSQL
+-   Redis cache
+-   Redis rate limit counter
+-   Multi-instance deployment
+-   Load balancer
 
-## ▶️ Local Çalıştırma
+------------------------------------------------------------------------
 
-Backend:
+## 🚀 Deployment
 
-cd backend  
-.\.venv\Scripts\Activate.ps1  
-python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000  
+Frontend: Vercel\
+Backend: Render
 
-Frontend:
+Live Demo:
 
-cd frontend  
-npm install  
-npm run dev  
+Frontend: https://mini-market-dashboard-six.vercel.app/
 
-Frontend:
-http://localhost:3000
+Backend: https://mini-market-dashboard.onrender.com/
 
-Backend Docs:
-http://127.0.0.1:8000/docs
-
----
+------------------------------------------------------------------------
 
 # 🇬🇧 English
 
-## Goal
+## 🎯 Vision
 
-This project simulates a real SaaS architecture.
+This project simulates a real SaaS architecture using the CoinGecko
+public API.
 
 It demonstrates:
-- JWT authentication
-- Plan-based rate limiting
-- Backend proxy pattern
-- Caching strategy
-- Mobile-ready UI
 
-Critical rule:
-Frontend never calls the external API directly.
-All data flows through the backend proxy.
+-   Backend proxy enforcement
+-   Plan-based quota design
+-   Production-aware caching strategy
+-   Authentication & authorization
+-   Deployment configuration management
 
----
+------------------------------------------------------------------------
 
-## Result
+## 📊 Rate Limiting Philosophy
 
-This is not just a coin dashboard.
+Free users are limited to 10 upstream API calls per day.
 
-It is:
-- A SaaS simulation
-- An architectural demonstration
-- A backend engineering practice
-- A scalability awareness exercise
+Only real upstream calls are counted. Cache hits do not consume quota.
+
+This reflects real SaaS billing logic.
+
+------------------------------------------------------------------------
+
+## ⚡ Production Awareness
+
+Assignment TTL: 60 seconds\
+Demo TTL: 600 seconds
+
+Reason: Single-instance free hosting environments require higher TTL to
+avoid excessive upstream throttling.
+
+------------------------------------------------------------------------
+
+## ✅ What This Project Demonstrates
+
+-   SaaS simulation mindset
+-   Secure authentication flow
+-   Quota-based access control
+-   Cache + rate limit interaction
+-   Deployment awareness
+-   Analyst → Engineer thinking evolution
+
+------------------------------------------------------------------------
+
+## 👨‍💻 Author
+
+Designed as a practical full-stack SaaS simulation to demonstrate
+architectural thinking beyond data analysis.

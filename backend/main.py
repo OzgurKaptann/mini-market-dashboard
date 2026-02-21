@@ -5,7 +5,7 @@ from typing import Any, Dict, Tuple, List
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, Depends, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ from auth import hash_password, verify_password, create_access_token, decode_tok
 load_dotenv()
 
 COINGECKO_BASE_URL = os.getenv("COINGECKO_BASE_URL", "https://api.coingecko.com/api/v3")
-CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "60"))
+CACHE_TTL_SECONDS = int(os.getenv("CACHE_TTL_SECONDS", "600"))
 FREE_DAILY_LIMIT = 10
 
 app = FastAPI(title="Mini Market Dashboard API", version="1.0.0")
@@ -97,9 +97,15 @@ def get_current_user(
 
 def apply_daily_rate_limit(user: User, db: Session):
     """
-    Free plan: 10 istek/gün.
-    Cache'den dönse bile endpoint çağrıldıysa istek sayılır.
-    Reset UTC gününe göre yapılır.
+    Enforces per-user daily rate limiting.
+
+    IMPORTANT (demo-stable behavior):
+    - The daily counter increases ONLY when an upstream CoinGecko request is made.
+    - Cache HITs do NOT increment the counter.
+    - Free plan: limited number of upstream calls per day (e.g., 10/day).
+    - Pro plan: unlimited (no daily cap).
+
+    The counter resets when the calendar date changes (server local date).
     """
     today = datetime.utcnow().date()
 
@@ -159,8 +165,8 @@ async def coins_markets(
     page: int = 1,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
+    response: Response = None,
 ) -> List[Dict[str, Any]]:
-    apply_daily_rate_limit(user, db)
 
     if per_page < 1 or per_page > 250:
         raise HTTPException(status_code=400, detail="per_page must be between 1 and 250")
@@ -170,6 +176,9 @@ async def coins_markets(
     if cached is not None:
         print(f"CACHE HIT  -> {key}")
         return cached
+
+    # sadece upstream'e giderken sayaç artar
+    apply_daily_rate_limit(user, db)
 
     print(f"CACHE MISS -> {key} (calling CoinGecko)")
 
@@ -187,19 +196,36 @@ async def coins_markets(
         async with httpx.AsyncClient(timeout=10.0) as client:
             r = await client.get(url, params=params)
 
-        # CoinGecko public rate limit (Render IP bazlı olabilir)
         if r.status_code == 429:
+            if cached is not None:
+                print("UPSTREAM 429 -> serving STALE cache")
+                response.headers["X-Data-Stale"] = "true"
+                response.headers["X-Upstream-Status"] = "429"
+                return cached
+
             raise HTTPException(
                 status_code=503,
                 detail="CoinGecko rate limit (public API). Please try again in 30-60 seconds.",
             )
 
         if r.status_code != 200:
+            if cached is not None:
+                print(f"UPSTREAM {r.status_code} -> serving STALE cache")
+                response.headers["X-Data-Stale"] = "true"
+                response.headers["X-Upstream-Status"] = str(r.status_code)
+                return cached
+
             raise HTTPException(status_code=502, detail=f"Upstream error: {r.status_code}")
 
         raw = r.json()
 
     except httpx.RequestError:
+        if cached is not None:
+            print("UPSTREAM NETWORK ERROR -> serving STALE cache")
+            response.headers["X-Data-Stale"] = "true"
+            response.headers["X-Upstream-Status"] = "network_error"
+            return cached
+
         raise HTTPException(status_code=502, detail="Upstream request failed")
 
     data: List[Dict[str, Any]] = []
@@ -218,7 +244,6 @@ async def coins_markets(
 
     cache_set(key, data, CACHE_TTL_SECONDS)
     return data
-
 
 # ---- Debug endpoint (sayaç kontrolü) ----
 @app.get("/me")
