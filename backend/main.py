@@ -25,12 +25,20 @@ FREE_DAILY_LIMIT = 10
 
 app = FastAPI(title="Mini Market Dashboard API", version="1.0.0")
 
+# --- CORS (prod-ready) ---
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "http://localhost:3000")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        FRONTEND_ORIGIN,
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 # SQLite tablolarını oluştur
