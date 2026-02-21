@@ -110,7 +110,7 @@ TTL ortam değişkeni:
 ## 🗂️ Veritabanı Tasarımı
 
 ### USERS
-
+```bash
   Field                 Description
   --------------------- ---------------------
   id                    Primary Key
@@ -119,7 +119,7 @@ TTL ortam değişkeni:
   plan_type             Free / Pro
   daily_request_count   Daily quota counter
   last_request_date     Reset control
-  created_at            Timestamp
+  created_at            Timestamp```
 
 ------------------------------------------------------------------------
 
